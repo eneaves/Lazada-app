@@ -61,6 +61,7 @@ class _ParticipantsScreenState extends ConsumerState<ParticipantsScreen> {
     final sheet = excel.tables.values.first;
     int importados = 0;
     int omitidos = 0;
+    List<String> errores = [];
 
     for (var r = 1; r < sheet.maxRows; r++) {
       final row = sheet.row(r);
@@ -69,24 +70,36 @@ class _ParticipantsScreenState extends ConsumerState<ParticipantsScreen> {
       final roleStr = row.length > 2 ? row[2]?.value.toString().toLowerCase().trim() ?? '' : '';
       final email = row.length > 3 ? row[3]?.value.toString().trim() : null;
 
-      if (firstName.isEmpty || lastName.isEmpty || !(roleStr == 'head' || roleStr == 'heel')) {
+      if (firstName.isEmpty) {
         omitidos++;
+        errores.add('Fila ${r + 1}: Sin nombre.');
         continue;
       }
 
-      final role = roleStr == 'head' ? Role.head : Role.heel;
+      final role = roleStr == 'heel'
+          ? Role.heel
+          : Role.head; // por defecto si está vacío o es inválido
 
       await ref.read(participantsProvider.notifier).add(
-            firstName: firstName,
-            lastName: lastName,
-            role: role,
-            email: (email?.isEmpty ?? true) ? null : email,
-          );
+        firstName: firstName,
+        lastName: lastName,
+        role: role,
+        email: (email?.isEmpty ?? true) ? null : email,
+      );
       importados++;
     }
 
+    final resumen = '✅ Importados: $importados — ❌ Omitidos: $omitidos';
+    final detalleErrores = errores.isEmpty ? '' : '\n\nDetalles:\n${errores.join('\n')}';
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('✅ Importados: $importados — ❌ Omitidos: $omitidos')),
+      SnackBar(
+        content: Text(
+          resumen + detalleErrores,
+          style: const TextStyle(fontSize: 13),
+        ),
+        duration: Duration(seconds: errores.length > 3 ? 10 : 5),
+      ),
     );
   }
 
@@ -158,7 +171,6 @@ class _ParticipantsScreenState extends ConsumerState<ParticipantsScreen> {
                       TextFormField(
                         controller: _lastNameCtrl,
                         decoration: const InputDecoration(labelText: 'Apellido'),
-                        validator: (v) => v == null || v.trim().isEmpty ? 'Ingrese un apellido' : null,
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<Role>(
@@ -171,7 +183,6 @@ class _ParticipantsScreenState extends ConsumerState<ParticipantsScreen> {
                           );
                         }).toList(),
                         onChanged: (r) => setState(() => _selectedRole = r),
-                        validator: (v) => v == null ? 'Seleccione un rol' : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(

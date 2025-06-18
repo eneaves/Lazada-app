@@ -6,7 +6,7 @@ class AppTheme {
     scaffoldBackgroundColor: const Color(0xFFF9F6F2),
     colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepOrange),
     useMaterial3: true,
-    textTheme: GoogleFonts.poppinsTextTheme(),
+    textTheme: ThemeData.light().textTheme,
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.deepOrange,

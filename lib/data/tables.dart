@@ -1,5 +1,3 @@
-// lib/data/tables.dart
-
 import 'package:drift/drift.dart';
 
 /// Roles permitidos en la competencia.
@@ -24,7 +22,7 @@ class RoleConverter extends TypeConverter<Role, String> {
 class Participants extends Table {
   IntColumn    get id        => integer().autoIncrement()();
   TextColumn   get firstName => text().withLength(min: 1, max: 50)();
-  TextColumn   get lastName  => text().withLength(min: 1, max: 50)();
+  TextColumn   get lastName  => text().withLength(min: 0, max: 50)();
   TextColumn   get email     => text().nullable()();
   TextColumn   get role      => text().map(const RoleConverter())();
 }
@@ -36,11 +34,27 @@ class Rounds extends Table {
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 }
 
-/// Tabla de emparejamientos por ronda.
+/// Tabla de emparejamientos por ronda y tiro.
 class Pairings extends Table {
-  IntColumn get id                => integer().autoIncrement()();
-  IntColumn get roundId           => integer().customConstraint('REFERENCES rounds(id)')();
-  IntColumn get participantHeadId => integer().customConstraint('REFERENCES participants(id)')();
-  IntColumn get participantHeelId => integer().customConstraint('REFERENCES participants(id)')();
-  IntColumn get timeSeconds       => integer().withDefault(const Constant(0))();
+  IntColumn get id => integer().autoIncrement()();
+
+  IntColumn get roundId =>
+      integer().references(Rounds, #id)(); 
+
+  @ReferenceName('headRefs')
+  IntColumn get participantHeadId =>
+      integer().references(Participants, #id)(); 
+
+  @ReferenceName('heelRefs')
+  IntColumn get participantHeelId =>
+      integer().references(Participants, #id)(); 
+
+  IntColumn get timeSeconds => integer().withDefault(const Constant(0))();
+  IntColumn get shotNumber => integer()();
+
+  // Nuevos campos para control de eliminación
+  BoolColumn get isEliminated =>
+      boolean().withDefault(const Constant(false))();
+
+  IntColumn get eliminatedInRoundId => integer().nullable()();
 }

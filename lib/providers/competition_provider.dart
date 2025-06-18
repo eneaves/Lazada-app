@@ -8,17 +8,21 @@ class CompetitionState {
   final int currentRoundId;
   final int currentRoundNumber;
   final int initialRoundId;
+  final int shotsPerRound;
 
   const CompetitionState({
     required this.totalRounds,
     required this.currentRoundId,
     required this.currentRoundNumber,
     required this.initialRoundId,
+    required this.shotsPerRound,
   });
 }
 
 /// StateNotifier que gestiona la configuración de la competencia.
 class CompetitionNotifier extends StateNotifier<AsyncValue<CompetitionState>> {
+  final Ref ref;
+
   CompetitionNotifier(this.ref)
       : super(
           const AsyncValue.data(
@@ -27,23 +31,23 @@ class CompetitionNotifier extends StateNotifier<AsyncValue<CompetitionState>> {
               currentRoundId: 0,
               currentRoundNumber: 0,
               initialRoundId: 0,
+              shotsPerRound: 0,
             ),
           ),
         );
 
-  final Ref ref;
-
-  /// Reinicia la base de datos y configura nueva competencia.
-  Future<void> configureCompetition(int rounds) async {
+  Future<void> configureCompetition({
+    required int rounds,
+    required int shotsPerRound,
+  }) async {
     state = const AsyncValue.loading();
     try {
       final db = ref.read(databaseProvider);
 
-      // 🧹 Limpiar rondas y emparejamientos anteriores
+      // 🧹 Limpiar todo
       await db.delete(db.pairings).go();
       await db.delete(db.rounds).go();
 
-      // 🆕 Crear nueva ronda inicial
       final roundId = await db.createRound(1);
 
       state = AsyncValue.data(
@@ -52,13 +56,14 @@ class CompetitionNotifier extends StateNotifier<AsyncValue<CompetitionState>> {
           currentRoundId: roundId,
           currentRoundNumber: 1,
           initialRoundId: roundId,
+          shotsPerRound: shotsPerRound,
         ),
       );
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
   }
-}
+} 
 
 /// Provider global del estado de competencia.
 final competitionProvider =

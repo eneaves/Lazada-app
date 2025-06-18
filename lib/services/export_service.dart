@@ -22,7 +22,7 @@ class ExportService {
     final partMap = {for (var p in participants) p.id: '${p.firstName} ${p.lastName}'};
 
     final parejaSheet = excel['ResumenPorPareja'];
-    parejaSheet.appendRow(['Posición', 'Pareja', 'Ronda', 'Tiempo']);
+    parejaSheet.appendRow(['Posición', 'Pareja', 'Ronda - Tiro', 'Tiempo']);
 
     // Agrupar parejas desde ronda 1
     final round1Pairings = pairings.where((p) => roundMap[p.roundId] == 1).toList();
@@ -43,24 +43,29 @@ class ExportService {
     final List<_ExportPair> exportPairs = agrupadas.entries.map((entry) {
       final ids = entry.key.split('-').map(int.parse).toList();
       final nombre = '${partMap[ids[0]]} ↔ ${partMap[ids[1]]}';
-      final rondas = entry.value.map((p) {
-        return _RoundResult(
+
+      final tiros = entry.value.map((p) {
+        return _ShotResult(
           round: roundMap[p.roundId] ?? p.roundId,
+          shotNumber: p.shotNumber,
           time: p.timeSeconds,
         );
       }).toList()
-        ..sort((a, b) => a.round.compareTo(b.round));
+        ..sort((a, b) {
+          final cmp = a.round.compareTo(b.round);
+          return cmp != 0 ? cmp : a.shotNumber.compareTo(b.shotNumber);
+        });
 
-      final total = rondas.fold(0, (sum, r) => sum + r.time);
-      final avg = rondas.isEmpty ? 0 : total / rondas.length;
-      final eliminado = rondas.isNotEmpty && rondas.last.time == 0;
+      final total = tiros.fold(0, (sum, s) => sum + s.time);
+      final avg = tiros.isEmpty ? 0 : total / tiros.length;
+      final eliminado = tiros.isNotEmpty && tiros.last.time == 0;
 
       return _ExportPair(
         label: nombre,
-        rondas: rondas,
+        tiros: tiros,
         totalTime: total,
         avgTime: avg.toDouble(),
-        eliminatedRound: eliminado ? rondas.last.round : null,
+        eliminatedRound: eliminado ? tiros.last.round : null,
       );
     }).toList();
 
@@ -75,8 +80,8 @@ class ExportService {
       final p = activos[i];
       final posEmoji = i < 3 ? ['🥇', '🥈', '🥉'][i] : '${i + 1}.';
       parejaSheet.appendRow([posEmoji, p.label, '', '']);
-      for (final r in p.rondas) {
-        parejaSheet.appendRow(['', '', 'Ronda ${r.round}', '${r.time}s']);
+      for (final s in p.tiros) {
+        parejaSheet.appendRow(['', '', 'Ronda ${s.round} — Tiro ${s.shotNumber}', '${s.time}s']);
       }
       parejaSheet.appendRow(['', '', 'TOTAL', '${p.totalTime}s']);
       parejaSheet.appendRow(['', '', 'PROMEDIO', '${p.avgTime.toStringAsFixed(2)}s']);
@@ -86,8 +91,8 @@ class ExportService {
     // Escribir eliminados
     for (final p in eliminados) {
       parejaSheet.appendRow(['🚫', p.label, '', '']);
-      for (final r in p.rondas) {
-        parejaSheet.appendRow(['', '', 'Ronda ${r.round}', '${r.time}s']);
+      for (final s in p.tiros) {
+        parejaSheet.appendRow(['', '', 'Ronda ${s.round} — Tiro ${s.shotNumber}', '${s.time}s']);
       }
       parejaSheet.appendRow(['', '', 'TOTAL', '${p.totalTime}s']);
       parejaSheet.appendRow(['', '', 'PROMEDIO', '${p.avgTime.toStringAsFixed(2)}s']);
@@ -118,6 +123,29 @@ class ExportService {
         '${promedio.toStringAsFixed(2)} s',
       ]);
     }
+
+    // Hoja de historial plano de tiros
+    final flatSheet = excel['HistorialTiros'];
+    flatSheet.appendRow(['Participante A', 'Participante B', 'Ronda', 'Tiro', 'Tiempo (s)']);
+
+    final sorted = pairings.toList()
+      ..sort((a, b) {
+        final cmpRound = roundMap[a.roundId]!.compareTo(roundMap[b.roundId]!);
+        return cmpRound != 0 ? cmpRound : a.shotNumber.compareTo(b.shotNumber);
+      });
+
+    for (final p in sorted) {
+      final a = partMap[p.participantHeadId]!;
+      final b = partMap[p.participantHeelId]!;
+      flatSheet.appendRow([
+        a,
+        b,
+        'Ronda ${roundMap[p.roundId]}',
+        'Tiro ${p.shotNumber}',
+        '${p.timeSeconds}s',
+      ]);
+    }
+
 
     // Guardar archivo
     final Uint8List fileBytes = excel.encode() as Uint8List;
@@ -152,23 +180,28 @@ class ExportService {
 
 class _ExportPair {
   final String label;
-  final List<_RoundResult> rondas;
+  final List<_ShotResult> tiros;
   final int totalTime;
   final double avgTime;
   final int? eliminatedRound;
 
   _ExportPair({
     required this.label,
-    required this.rondas,
+    required this.tiros,
     required this.totalTime,
     required this.avgTime,
     this.eliminatedRound,
   });
 }
 
-class _RoundResult {
+class _ShotResult {
   final int round;
+  final int shotNumber;
   final int time;
 
-  _RoundResult({required this.round, required this.time});
+  _ShotResult({
+    required this.round,
+    required this.shotNumber,
+    required this.time,
+  });
 }

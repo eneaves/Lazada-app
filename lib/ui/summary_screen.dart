@@ -79,46 +79,57 @@ class SummaryScreen extends ConsumerWidget {
             final roundMap = {for (var r in rounds) r.id: r.number};
             final partMap = {for (var p in participants) p.id: p};
 
-            final round1Pairings = pairings.where((p) => roundMap[p.roundId] == 1).toList();
             final Map<String, _PairData> pairDataMap = {};
 
-            for (final base in round1Pairings) {
-              final head = partMap[base.participantHeadId]!;
-              final heel = partMap[base.participantHeelId]!;
+            for (final p in pairings) {
+              final head = partMap[p.participantHeadId]!;
+              final heel = partMap[p.participantHeelId]!;
 
               final key = ([head.id, heel.id]..sort()).join('-');
-              final label = '${head.firstName} ${head.lastName} (head) ↔ ${heel.firstName} ${heel.lastName} (heel)';
+              pairDataMap.putIfAbsent(
+                key,
+                () => _PairData(
+                  label: '${head.firstName} ${head.lastName} (head) ↔ ${heel.firstName} ${heel.lastName} (heel)',
+                  ids: [head.id, heel.id],
+                ),
+              );
 
-              pairDataMap[key] = _PairData(label: label, ids: [head.id, heel.id]);
-            }
-
-
-            for (final p in pairings) {
-              final ids = [p.participantHeadId, p.participantHeelId]..sort();
-              final key = '${ids[0]}-${ids[1]}';
-              if (pairDataMap.containsKey(key)) {
-                pairDataMap[key]!.rounds.add(_RoundResult(
+              pairDataMap[key]!.shots.add(
+                _ShotResult(
                   round: roundMap[p.roundId] ?? p.roundId,
+                  shotNumber: p.shotNumber,
                   time: p.timeSeconds,
-                ));
-              }
+                  isEliminated: p.isEliminated,
+                ),
+              );
             }
 
             for (final pd in pairDataMap.values) {
-              pd.rounds.sort((a, b) => a.round.compareTo(b.round));
-              pd.totalTime = pd.rounds.fold(0, (sum, r) => sum + r.time);
-              pd.avgTime = pd.rounds.isEmpty ? 0 : pd.totalTime / pd.rounds.length;
+              pd.shots.sort((a, b) {
+                final cmp = a.round.compareTo(b.round);
+                return cmp != 0 ? cmp : a.shotNumber.compareTo(b.shotNumber);
+              });
+              final validShots = pd.shots.where((s) => !s.isEliminated).toList();
+              pd.totalTime = validShots.fold(0, (sum, s) => sum + s.time);
+              pd.avgTime = validShots.isEmpty ? 0 : pd.totalTime / validShots.length;
+
+              final firstEliminated = pd.shots.firstWhere(
+                (s) => s.isEliminated,
+                orElse: () => _ShotResult(round: -1, shotNumber: -1, time: 0, isEliminated: false),
+              );
+              if (firstEliminated.isEliminated) {
+                pd.eliminatedInRound = firstEliminated.round;
+                pd.eliminatedInShot = firstEliminated.shotNumber;
+              }
             }
 
-            final pairList = pairDataMap.values.toList();
             final activePairs = <_PairData>[];
             final eliminatedPairs = <_PairData>[];
-
-            for (final pair in pairList) {
-              if (pair.rounds.isNotEmpty && pair.rounds.last.time == 0) {
-                eliminatedPairs.add(pair);
+            for (final pd in pairDataMap.values) {
+              if (pd.eliminatedInRound != null) {
+                eliminatedPairs.add(pd);
               } else {
-                activePairs.add(pair);
+                activePairs.add(pd);
               }
             }
 
@@ -132,11 +143,29 @@ class SummaryScreen extends ConsumerWidget {
             };
 
             for (final p in pairings) {
-              for (final id in [p.participantHeadId, p.participantHeelId]) {
-                final stat = indivStats[id];
-                if (stat != null) {
-                  stat.totalTime += p.timeSeconds;
-                  stat.count += 1;
+              final head = partMap[p.participantHeadId]!;
+              final heel = partMap[p.participantHeelId]!;
+
+              final pairs = [
+                [p.participantHeadId, p.participantHeelId],
+                [p.participantHeelId, p.participantHeadId],
+              ];
+
+              for (final [selfId, partnerId] in pairs) {
+                final selfStat = indivStats[selfId];
+                final partner = partMap[partnerId];
+                if (selfStat != null && partner != null) {
+                  selfStat.totalTime += p.timeSeconds;
+                  selfStat.count += 1;
+
+                  selfStat.partners.putIfAbsent(
+                    partnerId,
+                    () => _PartnerData(name: '${partner.firstName} ${partner.lastName}'),
+                  );
+
+                  final partnerStat = selfStat.partners[partnerId]!;
+                  partnerStat.totalTime += p.timeSeconds;
+                  partnerStat.count += 1;
                 }
               }
             }
@@ -153,10 +182,9 @@ class SummaryScreen extends ConsumerWidget {
                   itemCount: orderedPairs.length,
                   itemBuilder: (_, i) {
                     final pd = orderedPairs[i];
-                    final isEliminated = pd.rounds.isNotEmpty && pd.rounds.last.time == 0;
                     final placeEmoji = ['🥇', '🥈', '🥉'];
                     final place = i + 1;
-                    final prefix = isEliminated
+                    final prefix = pd.eliminatedInRound != null
                         ? '🚫'
                         : (place <= 3 ? placeEmoji[place - 1] : '$place.');
 
@@ -168,21 +196,23 @@ class SummaryScreen extends ConsumerWidget {
                       child: ExpansionTile(
                         title: Text('$prefix ${pd.label}'),
                         subtitle: Text(
-                          isEliminated
-                              ? 'Eliminado en ronda ${pd.rounds.last.round}'
+                          pd.eliminatedInRound != null
+                              ? 'Eliminado en ronda ${pd.eliminatedInRound}, tiro ${pd.eliminatedInShot}'
                               : 'Total: ${pd.totalTime}s — Promedio: ${pd.avgTime.toStringAsFixed(2)}s',
                         ),
                         children: [
-                          ...pd.rounds.map((r) => ListTile(
-                                title: Text('Ronda ${r.round}'),
-                                trailing: Text('${r.time}s'),
+                          ...pd.shots.map((s) => ListTile(
+                                title: Text('Ronda ${s.round} — Tiro ${s.shotNumber}'),
+                                trailing: s.isEliminated
+                                    ? const Text('🚫 Eliminado', style: TextStyle(color: Colors.red))
+                                    : Text('${s.time}s'),
                               )),
                           const Divider(),
                           ListTile(
                             title: const Text('Resumen', style: TextStyle(fontWeight: FontWeight.bold)),
                             trailing: Text(
-                              isEliminated
-                                  ? 'Eliminado en ronda ${pd.rounds.last.round}'
+                              pd.eliminatedInRound != null
+                                  ? 'Eliminado en ronda ${pd.eliminatedInRound}, tiro ${pd.eliminatedInShot}'
                                   : 'Total: ${pd.totalTime}s — Promedio: ${pd.avgTime.toStringAsFixed(2)}s',
                             ),
                           ),
@@ -201,12 +231,21 @@ class SummaryScreen extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(AppStyles.cardRadius),
                       ),
                       margin: const EdgeInsets.symmetric(vertical: 8),
-                      child: ListTile(
-                        leading: const Icon(Icons.person),
+                      child: ExpansionTile(
                         title: Text(s.name),
                         subtitle: Text(
                           'Lanzamientos: ${s.count} — Total: ${s.totalTime}s — Promedio: ${s.avgTime.toStringAsFixed(2)}s',
                         ),
+                        children: s.partners.entries.map((entry) {
+                          final partner = entry.value;
+                          return ListTile(
+                            leading: const Icon(Icons.group),
+                            title: Text('Con ${partner.name}'),
+                            subtitle: Text(
+                              'Total: ${partner.totalTime}s — Promedio: ${partner.avgTime.toStringAsFixed(2)}s',
+                            ),
+                          );
+                        }).toList(),
                       ),
                     );
                   }).toList(),
@@ -223,18 +262,27 @@ class SummaryScreen extends ConsumerWidget {
 class _PairData {
   final String label;
   final List<int> ids;
-  final List<_RoundResult> rounds = [];
+  final List<_ShotResult> shots = [];
   int totalTime = 0;
   double avgTime = 0;
+  int? eliminatedInRound;
+  int? eliminatedInShot;
 
   _PairData({required this.label, required this.ids});
 }
 
-class _RoundResult {
+class _ShotResult {
   final int round;
+  final int shotNumber;
   final int time;
+  final bool isEliminated;
 
-  _RoundResult({required this.round, required this.time});
+  _ShotResult({
+    required this.round,
+    required this.shotNumber,
+    required this.time,
+    required this.isEliminated,
+  });
 }
 
 class _IndividualStats {
@@ -242,6 +290,17 @@ class _IndividualStats {
   int totalTime = 0;
   int count = 0;
   double avgTime = 0;
+  final Map<int, _PartnerData> partners = {};
 
   _IndividualStats({required this.name});
+}
+
+class _PartnerData {
+  final String name;
+  int totalTime = 0;
+  int count = 0;
+
+  _PartnerData({required this.name});
+
+  double get avgTime => count == 0 ? 0 : totalTime / count;
 }

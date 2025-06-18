@@ -46,7 +46,7 @@ class $ParticipantsTable extends Participants
     aliasedName,
     false,
     additionalChecks: GeneratedColumn.checkTextLength(
-      minTextLength: 1,
+      minTextLength: 0,
       maxTextLength: 50,
     ),
     type: DriftSqlType.string,
@@ -634,7 +634,9 @@ class $PairingsTable extends Pairings with TableInfo<$PairingsTable, Pairing> {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
-    $customConstraints: 'REFERENCES rounds(id)',
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES rounds (id)',
+    ),
   );
   static const VerificationMeta _participantHeadIdMeta = const VerificationMeta(
     'participantHeadId',
@@ -646,7 +648,9 @@ class $PairingsTable extends Pairings with TableInfo<$PairingsTable, Pairing> {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
-    $customConstraints: 'REFERENCES participants(id)',
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES participants (id)',
+    ),
   );
   static const VerificationMeta _participantHeelIdMeta = const VerificationMeta(
     'participantHeelId',
@@ -658,7 +662,9 @@ class $PairingsTable extends Pairings with TableInfo<$PairingsTable, Pairing> {
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: true,
-    $customConstraints: 'REFERENCES participants(id)',
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES participants (id)',
+    ),
   );
   static const VerificationMeta _timeSecondsMeta = const VerificationMeta(
     'timeSeconds',
@@ -672,6 +678,42 @@ class $PairingsTable extends Pairings with TableInfo<$PairingsTable, Pairing> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _shotNumberMeta = const VerificationMeta(
+    'shotNumber',
+  );
+  @override
+  late final GeneratedColumn<int> shotNumber = GeneratedColumn<int>(
+    'shot_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isEliminatedMeta = const VerificationMeta(
+    'isEliminated',
+  );
+  @override
+  late final GeneratedColumn<bool> isEliminated = GeneratedColumn<bool>(
+    'is_eliminated',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_eliminated" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _eliminatedInRoundIdMeta =
+      const VerificationMeta('eliminatedInRoundId');
+  @override
+  late final GeneratedColumn<int> eliminatedInRoundId = GeneratedColumn<int>(
+    'eliminated_in_round_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -679,6 +721,9 @@ class $PairingsTable extends Pairings with TableInfo<$PairingsTable, Pairing> {
     participantHeadId,
     participantHeelId,
     timeSeconds,
+    shotNumber,
+    isEliminated,
+    eliminatedInRoundId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -734,6 +779,32 @@ class $PairingsTable extends Pairings with TableInfo<$PairingsTable, Pairing> {
         ),
       );
     }
+    if (data.containsKey('shot_number')) {
+      context.handle(
+        _shotNumberMeta,
+        shotNumber.isAcceptableOrUnknown(data['shot_number']!, _shotNumberMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_shotNumberMeta);
+    }
+    if (data.containsKey('is_eliminated')) {
+      context.handle(
+        _isEliminatedMeta,
+        isEliminated.isAcceptableOrUnknown(
+          data['is_eliminated']!,
+          _isEliminatedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('eliminated_in_round_id')) {
+      context.handle(
+        _eliminatedInRoundIdMeta,
+        eliminatedInRoundId.isAcceptableOrUnknown(
+          data['eliminated_in_round_id']!,
+          _eliminatedInRoundIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -768,6 +839,20 @@ class $PairingsTable extends Pairings with TableInfo<$PairingsTable, Pairing> {
             DriftSqlType.int,
             data['${effectivePrefix}time_seconds'],
           )!,
+      shotNumber:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.int,
+            data['${effectivePrefix}shot_number'],
+          )!,
+      isEliminated:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.bool,
+            data['${effectivePrefix}is_eliminated'],
+          )!,
+      eliminatedInRoundId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}eliminated_in_round_id'],
+      ),
     );
   }
 
@@ -783,12 +868,18 @@ class Pairing extends DataClass implements Insertable<Pairing> {
   final int participantHeadId;
   final int participantHeelId;
   final int timeSeconds;
+  final int shotNumber;
+  final bool isEliminated;
+  final int? eliminatedInRoundId;
   const Pairing({
     required this.id,
     required this.roundId,
     required this.participantHeadId,
     required this.participantHeelId,
     required this.timeSeconds,
+    required this.shotNumber,
+    required this.isEliminated,
+    this.eliminatedInRoundId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -798,6 +889,11 @@ class Pairing extends DataClass implements Insertable<Pairing> {
     map['participant_head_id'] = Variable<int>(participantHeadId);
     map['participant_heel_id'] = Variable<int>(participantHeelId);
     map['time_seconds'] = Variable<int>(timeSeconds);
+    map['shot_number'] = Variable<int>(shotNumber);
+    map['is_eliminated'] = Variable<bool>(isEliminated);
+    if (!nullToAbsent || eliminatedInRoundId != null) {
+      map['eliminated_in_round_id'] = Variable<int>(eliminatedInRoundId);
+    }
     return map;
   }
 
@@ -808,6 +904,12 @@ class Pairing extends DataClass implements Insertable<Pairing> {
       participantHeadId: Value(participantHeadId),
       participantHeelId: Value(participantHeelId),
       timeSeconds: Value(timeSeconds),
+      shotNumber: Value(shotNumber),
+      isEliminated: Value(isEliminated),
+      eliminatedInRoundId:
+          eliminatedInRoundId == null && nullToAbsent
+              ? const Value.absent()
+              : Value(eliminatedInRoundId),
     );
   }
 
@@ -822,6 +924,11 @@ class Pairing extends DataClass implements Insertable<Pairing> {
       participantHeadId: serializer.fromJson<int>(json['participantHeadId']),
       participantHeelId: serializer.fromJson<int>(json['participantHeelId']),
       timeSeconds: serializer.fromJson<int>(json['timeSeconds']),
+      shotNumber: serializer.fromJson<int>(json['shotNumber']),
+      isEliminated: serializer.fromJson<bool>(json['isEliminated']),
+      eliminatedInRoundId: serializer.fromJson<int?>(
+        json['eliminatedInRoundId'],
+      ),
     );
   }
   @override
@@ -833,6 +940,9 @@ class Pairing extends DataClass implements Insertable<Pairing> {
       'participantHeadId': serializer.toJson<int>(participantHeadId),
       'participantHeelId': serializer.toJson<int>(participantHeelId),
       'timeSeconds': serializer.toJson<int>(timeSeconds),
+      'shotNumber': serializer.toJson<int>(shotNumber),
+      'isEliminated': serializer.toJson<bool>(isEliminated),
+      'eliminatedInRoundId': serializer.toJson<int?>(eliminatedInRoundId),
     };
   }
 
@@ -842,12 +952,21 @@ class Pairing extends DataClass implements Insertable<Pairing> {
     int? participantHeadId,
     int? participantHeelId,
     int? timeSeconds,
+    int? shotNumber,
+    bool? isEliminated,
+    Value<int?> eliminatedInRoundId = const Value.absent(),
   }) => Pairing(
     id: id ?? this.id,
     roundId: roundId ?? this.roundId,
     participantHeadId: participantHeadId ?? this.participantHeadId,
     participantHeelId: participantHeelId ?? this.participantHeelId,
     timeSeconds: timeSeconds ?? this.timeSeconds,
+    shotNumber: shotNumber ?? this.shotNumber,
+    isEliminated: isEliminated ?? this.isEliminated,
+    eliminatedInRoundId:
+        eliminatedInRoundId.present
+            ? eliminatedInRoundId.value
+            : this.eliminatedInRoundId,
   );
   Pairing copyWithCompanion(PairingsCompanion data) {
     return Pairing(
@@ -863,6 +982,16 @@ class Pairing extends DataClass implements Insertable<Pairing> {
               : this.participantHeelId,
       timeSeconds:
           data.timeSeconds.present ? data.timeSeconds.value : this.timeSeconds,
+      shotNumber:
+          data.shotNumber.present ? data.shotNumber.value : this.shotNumber,
+      isEliminated:
+          data.isEliminated.present
+              ? data.isEliminated.value
+              : this.isEliminated,
+      eliminatedInRoundId:
+          data.eliminatedInRoundId.present
+              ? data.eliminatedInRoundId.value
+              : this.eliminatedInRoundId,
     );
   }
 
@@ -873,7 +1002,10 @@ class Pairing extends DataClass implements Insertable<Pairing> {
           ..write('roundId: $roundId, ')
           ..write('participantHeadId: $participantHeadId, ')
           ..write('participantHeelId: $participantHeelId, ')
-          ..write('timeSeconds: $timeSeconds')
+          ..write('timeSeconds: $timeSeconds, ')
+          ..write('shotNumber: $shotNumber, ')
+          ..write('isEliminated: $isEliminated, ')
+          ..write('eliminatedInRoundId: $eliminatedInRoundId')
           ..write(')'))
         .toString();
   }
@@ -885,6 +1017,9 @@ class Pairing extends DataClass implements Insertable<Pairing> {
     participantHeadId,
     participantHeelId,
     timeSeconds,
+    shotNumber,
+    isEliminated,
+    eliminatedInRoundId,
   );
   @override
   bool operator ==(Object other) =>
@@ -894,7 +1029,10 @@ class Pairing extends DataClass implements Insertable<Pairing> {
           other.roundId == this.roundId &&
           other.participantHeadId == this.participantHeadId &&
           other.participantHeelId == this.participantHeelId &&
-          other.timeSeconds == this.timeSeconds);
+          other.timeSeconds == this.timeSeconds &&
+          other.shotNumber == this.shotNumber &&
+          other.isEliminated == this.isEliminated &&
+          other.eliminatedInRoundId == this.eliminatedInRoundId);
 }
 
 class PairingsCompanion extends UpdateCompanion<Pairing> {
@@ -903,12 +1041,18 @@ class PairingsCompanion extends UpdateCompanion<Pairing> {
   final Value<int> participantHeadId;
   final Value<int> participantHeelId;
   final Value<int> timeSeconds;
+  final Value<int> shotNumber;
+  final Value<bool> isEliminated;
+  final Value<int?> eliminatedInRoundId;
   const PairingsCompanion({
     this.id = const Value.absent(),
     this.roundId = const Value.absent(),
     this.participantHeadId = const Value.absent(),
     this.participantHeelId = const Value.absent(),
     this.timeSeconds = const Value.absent(),
+    this.shotNumber = const Value.absent(),
+    this.isEliminated = const Value.absent(),
+    this.eliminatedInRoundId = const Value.absent(),
   });
   PairingsCompanion.insert({
     this.id = const Value.absent(),
@@ -916,15 +1060,22 @@ class PairingsCompanion extends UpdateCompanion<Pairing> {
     required int participantHeadId,
     required int participantHeelId,
     this.timeSeconds = const Value.absent(),
+    required int shotNumber,
+    this.isEliminated = const Value.absent(),
+    this.eliminatedInRoundId = const Value.absent(),
   }) : roundId = Value(roundId),
        participantHeadId = Value(participantHeadId),
-       participantHeelId = Value(participantHeelId);
+       participantHeelId = Value(participantHeelId),
+       shotNumber = Value(shotNumber);
   static Insertable<Pairing> custom({
     Expression<int>? id,
     Expression<int>? roundId,
     Expression<int>? participantHeadId,
     Expression<int>? participantHeelId,
     Expression<int>? timeSeconds,
+    Expression<int>? shotNumber,
+    Expression<bool>? isEliminated,
+    Expression<int>? eliminatedInRoundId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -932,6 +1083,10 @@ class PairingsCompanion extends UpdateCompanion<Pairing> {
       if (participantHeadId != null) 'participant_head_id': participantHeadId,
       if (participantHeelId != null) 'participant_heel_id': participantHeelId,
       if (timeSeconds != null) 'time_seconds': timeSeconds,
+      if (shotNumber != null) 'shot_number': shotNumber,
+      if (isEliminated != null) 'is_eliminated': isEliminated,
+      if (eliminatedInRoundId != null)
+        'eliminated_in_round_id': eliminatedInRoundId,
     });
   }
 
@@ -941,6 +1096,9 @@ class PairingsCompanion extends UpdateCompanion<Pairing> {
     Value<int>? participantHeadId,
     Value<int>? participantHeelId,
     Value<int>? timeSeconds,
+    Value<int>? shotNumber,
+    Value<bool>? isEliminated,
+    Value<int?>? eliminatedInRoundId,
   }) {
     return PairingsCompanion(
       id: id ?? this.id,
@@ -948,6 +1106,9 @@ class PairingsCompanion extends UpdateCompanion<Pairing> {
       participantHeadId: participantHeadId ?? this.participantHeadId,
       participantHeelId: participantHeelId ?? this.participantHeelId,
       timeSeconds: timeSeconds ?? this.timeSeconds,
+      shotNumber: shotNumber ?? this.shotNumber,
+      isEliminated: isEliminated ?? this.isEliminated,
+      eliminatedInRoundId: eliminatedInRoundId ?? this.eliminatedInRoundId,
     );
   }
 
@@ -969,6 +1130,15 @@ class PairingsCompanion extends UpdateCompanion<Pairing> {
     if (timeSeconds.present) {
       map['time_seconds'] = Variable<int>(timeSeconds.value);
     }
+    if (shotNumber.present) {
+      map['shot_number'] = Variable<int>(shotNumber.value);
+    }
+    if (isEliminated.present) {
+      map['is_eliminated'] = Variable<bool>(isEliminated.value);
+    }
+    if (eliminatedInRoundId.present) {
+      map['eliminated_in_round_id'] = Variable<int>(eliminatedInRoundId.value);
+    }
     return map;
   }
 
@@ -979,7 +1149,10 @@ class PairingsCompanion extends UpdateCompanion<Pairing> {
           ..write('roundId: $roundId, ')
           ..write('participantHeadId: $participantHeadId, ')
           ..write('participantHeelId: $participantHeelId, ')
-          ..write('timeSeconds: $timeSeconds')
+          ..write('timeSeconds: $timeSeconds, ')
+          ..write('shotNumber: $shotNumber, ')
+          ..write('isEliminated: $isEliminated, ')
+          ..write('eliminatedInRoundId: $eliminatedInRoundId')
           ..write(')'))
         .toString();
   }
@@ -1019,6 +1192,55 @@ typedef $$ParticipantsTableUpdateCompanionBuilder =
       Value<Role> role,
     });
 
+final class $$ParticipantsTableReferences
+    extends BaseReferences<_$AppDatabase, $ParticipantsTable, Participant> {
+  $$ParticipantsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$PairingsTable, List<Pairing>> _headRefsTable(
+    _$AppDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.pairings,
+    aliasName: $_aliasNameGenerator(
+      db.participants.id,
+      db.pairings.participantHeadId,
+    ),
+  );
+
+  $$PairingsTableProcessedTableManager get headRefs {
+    final manager = $$PairingsTableTableManager(
+      $_db,
+      $_db.pairings,
+    ).filter((f) => f.participantHeadId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_headRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$PairingsTable, List<Pairing>> _heelRefsTable(
+    _$AppDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.pairings,
+    aliasName: $_aliasNameGenerator(
+      db.participants.id,
+      db.pairings.participantHeelId,
+    ),
+  );
+
+  $$PairingsTableProcessedTableManager get heelRefs {
+    final manager = $$PairingsTableTableManager(
+      $_db,
+      $_db.pairings,
+    ).filter((f) => f.participantHeelId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_heelRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
 class $$ParticipantsTableFilterComposer
     extends Composer<_$AppDatabase, $ParticipantsTable> {
   $$ParticipantsTableFilterComposer({
@@ -1053,6 +1275,56 @@ class $$ParticipantsTableFilterComposer
         column: $table.role,
         builder: (column) => ColumnWithTypeConverterFilters(column),
       );
+
+  Expression<bool> headRefs(
+    Expression<bool> Function($$PairingsTableFilterComposer f) f,
+  ) {
+    final $$PairingsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.pairings,
+      getReferencedColumn: (t) => t.participantHeadId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PairingsTableFilterComposer(
+            $db: $db,
+            $table: $db.pairings,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> heelRefs(
+    Expression<bool> Function($$PairingsTableFilterComposer f) f,
+  ) {
+    final $$PairingsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.pairings,
+      getReferencedColumn: (t) => t.participantHeelId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PairingsTableFilterComposer(
+            $db: $db,
+            $table: $db.pairings,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ParticipantsTableOrderingComposer
@@ -1113,6 +1385,56 @@ class $$ParticipantsTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<Role, String> get role =>
       $composableBuilder(column: $table.role, builder: (column) => column);
+
+  Expression<T> headRefs<T extends Object>(
+    Expression<T> Function($$PairingsTableAnnotationComposer a) f,
+  ) {
+    final $$PairingsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.pairings,
+      getReferencedColumn: (t) => t.participantHeadId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PairingsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.pairings,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> heelRefs<T extends Object>(
+    Expression<T> Function($$PairingsTableAnnotationComposer a) f,
+  ) {
+    final $$PairingsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.pairings,
+      getReferencedColumn: (t) => t.participantHeelId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$PairingsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.pairings,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ParticipantsTableTableManager
@@ -1126,12 +1448,9 @@ class $$ParticipantsTableTableManager
           $$ParticipantsTableAnnotationComposer,
           $$ParticipantsTableCreateCompanionBuilder,
           $$ParticipantsTableUpdateCompanionBuilder,
-          (
-            Participant,
-            BaseReferences<_$AppDatabase, $ParticipantsTable, Participant>,
-          ),
+          (Participant, $$ParticipantsTableReferences),
           Participant,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool headRefs, bool heelRefs})
         > {
   $$ParticipantsTableTableManager(_$AppDatabase db, $ParticipantsTable table)
     : super(
@@ -1179,11 +1498,68 @@ class $$ParticipantsTableTableManager
                       .map(
                         (e) => (
                           e.readTable(table),
-                          BaseReferences(db, table, e),
+                          $$ParticipantsTableReferences(db, table, e),
                         ),
                       )
                       .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({headRefs = false, heelRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (headRefs) db.pairings,
+                if (heelRefs) db.pairings,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (headRefs)
+                    await $_getPrefetchedData<
+                      Participant,
+                      $ParticipantsTable,
+                      Pairing
+                    >(
+                      currentTable: table,
+                      referencedTable: $$ParticipantsTableReferences
+                          ._headRefsTable(db),
+                      managerFromTypedResult:
+                          (p0) =>
+                              $$ParticipantsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).headRefs,
+                      referencedItemsForCurrentItem:
+                          (item, referencedItems) => referencedItems.where(
+                            (e) => e.participantHeadId == item.id,
+                          ),
+                      typedResults: items,
+                    ),
+                  if (heelRefs)
+                    await $_getPrefetchedData<
+                      Participant,
+                      $ParticipantsTable,
+                      Pairing
+                    >(
+                      currentTable: table,
+                      referencedTable: $$ParticipantsTableReferences
+                          ._heelRefsTable(db),
+                      managerFromTypedResult:
+                          (p0) =>
+                              $$ParticipantsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).heelRefs,
+                      referencedItemsForCurrentItem:
+                          (item, referencedItems) => referencedItems.where(
+                            (e) => e.participantHeelId == item.id,
+                          ),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -1198,12 +1574,9 @@ typedef $$ParticipantsTableProcessedTableManager =
       $$ParticipantsTableAnnotationComposer,
       $$ParticipantsTableCreateCompanionBuilder,
       $$ParticipantsTableUpdateCompanionBuilder,
-      (
-        Participant,
-        BaseReferences<_$AppDatabase, $ParticipantsTable, Participant>,
-      ),
+      (Participant, $$ParticipantsTableReferences),
       Participant,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool headRefs, bool heelRefs})
     >;
 typedef $$RoundsTableCreateCompanionBuilder =
     RoundsCompanion Function({
@@ -1468,6 +1841,9 @@ typedef $$PairingsTableCreateCompanionBuilder =
       required int participantHeadId,
       required int participantHeelId,
       Value<int> timeSeconds,
+      required int shotNumber,
+      Value<bool> isEliminated,
+      Value<int?> eliminatedInRoundId,
     });
 typedef $$PairingsTableUpdateCompanionBuilder =
     PairingsCompanion Function({
@@ -1476,6 +1852,9 @@ typedef $$PairingsTableUpdateCompanionBuilder =
       Value<int> participantHeadId,
       Value<int> participantHeelId,
       Value<int> timeSeconds,
+      Value<int> shotNumber,
+      Value<bool> isEliminated,
+      Value<int?> eliminatedInRoundId,
     });
 
 final class $$PairingsTableReferences
@@ -1555,6 +1934,21 @@ class $$PairingsTableFilterComposer
 
   ColumnFilters<int> get timeSeconds => $composableBuilder(
     column: $table.timeSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get shotNumber => $composableBuilder(
+    column: $table.shotNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isEliminated => $composableBuilder(
+    column: $table.isEliminated,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get eliminatedInRoundId => $composableBuilder(
+    column: $table.eliminatedInRoundId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1647,6 +2041,21 @@ class $$PairingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get shotNumber => $composableBuilder(
+    column: $table.shotNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isEliminated => $composableBuilder(
+    column: $table.isEliminated,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get eliminatedInRoundId => $composableBuilder(
+    column: $table.eliminatedInRoundId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$RoundsTableOrderingComposer get roundId {
     final $$RoundsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -1731,6 +2140,21 @@ class $$PairingsTableAnnotationComposer
 
   GeneratedColumn<int> get timeSeconds => $composableBuilder(
     column: $table.timeSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get shotNumber => $composableBuilder(
+    column: $table.shotNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isEliminated => $composableBuilder(
+    column: $table.isEliminated,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get eliminatedInRoundId => $composableBuilder(
+    column: $table.eliminatedInRoundId,
     builder: (column) => column,
   );
 
@@ -1841,12 +2265,18 @@ class $$PairingsTableTableManager
                 Value<int> participantHeadId = const Value.absent(),
                 Value<int> participantHeelId = const Value.absent(),
                 Value<int> timeSeconds = const Value.absent(),
+                Value<int> shotNumber = const Value.absent(),
+                Value<bool> isEliminated = const Value.absent(),
+                Value<int?> eliminatedInRoundId = const Value.absent(),
               }) => PairingsCompanion(
                 id: id,
                 roundId: roundId,
                 participantHeadId: participantHeadId,
                 participantHeelId: participantHeelId,
                 timeSeconds: timeSeconds,
+                shotNumber: shotNumber,
+                isEliminated: isEliminated,
+                eliminatedInRoundId: eliminatedInRoundId,
               ),
           createCompanionCallback:
               ({
@@ -1855,12 +2285,18 @@ class $$PairingsTableTableManager
                 required int participantHeadId,
                 required int participantHeelId,
                 Value<int> timeSeconds = const Value.absent(),
+                required int shotNumber,
+                Value<bool> isEliminated = const Value.absent(),
+                Value<int?> eliminatedInRoundId = const Value.absent(),
               }) => PairingsCompanion.insert(
                 id: id,
                 roundId: roundId,
                 participantHeadId: participantHeadId,
                 participantHeelId: participantHeelId,
                 timeSeconds: timeSeconds,
+                shotNumber: shotNumber,
+                isEliminated: isEliminated,
+                eliminatedInRoundId: eliminatedInRoundId,
               ),
           withReferenceMapper:
               (p0) =>

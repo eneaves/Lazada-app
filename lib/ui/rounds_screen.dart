@@ -23,7 +23,7 @@ class RoundsScreen extends ConsumerStatefulWidget {
 }
 
 class _RoundsScreenState extends ConsumerState<RoundsScreen> {
-  late Future<List<_PairingWithNames>> _pairingsFuture;
+  late Future<Map<int, List<_PairingWithNames>>> _groupedPairingsFuture;
   final Map<int, TextEditingController> _controllers = {};
 
   @override
@@ -34,20 +34,37 @@ class _RoundsScreenState extends ConsumerState<RoundsScreen> {
 
   void _loadPairings() {
     final db = ref.read(databaseProvider);
-    _pairingsFuture = () async {
+    _groupedPairingsFuture = () async {
       final list = await db.getPairingsByRound(widget.roundId);
-      final result = <_PairingWithNames>[];
+
+      // Debug para verificar que isEliminated llega
+      for (final p in list) {
+        print('[DEBUG] pairing ID: ${p.id}, eliminado: ${p.isEliminated}, tiempo: ${p.timeSeconds}');
+      }
+
+      final result = <int, List<_PairingWithNames>>{};
 
       for (final p in list) {
         final head = await db.getParticipantById(p.participantHeadId);
         final heel = await db.getParticipantById(p.participantHeelId);
-        result.add(
+
+        final shot = p.shotNumber;
+        result.putIfAbsent(shot, () => []).add(
           _PairingWithNames(
             pairing: p,
             headName: '${head.firstName} ${head.lastName}',
             heelName: '${heel.firstName} ${heel.lastName}',
           ),
         );
+
+        _controllers.putIfAbsent(p.id, () {
+          final c = TextEditingController();
+          // Solo precargar si no está eliminado
+          if (!p.isEliminated && p.timeSeconds > 0) {
+            c.text = p.timeSeconds.toString();
+          }
+          return c;
+        });
       }
 
       return result;
@@ -62,28 +79,78 @@ class _RoundsScreenState extends ConsumerState<RoundsScreen> {
     super.dispose();
   }
 
-  Future<void> _saveAndNext(List<Pairing> list) async {
+  Future<void> _saveAndNext(List<Pairing> allPairings) async {
     final db = ref.read(databaseProvider);
-    for (final p in list) {
-      final secs = int.tryParse(_controllers[p.id]!.text) ?? 0;
+
+    // ⚠️ Validación: que no haya campos vacíos en pares activos
+    final missingTimes = allPairings.where((p) {
+      final raw = _controllers[p.id]?.text.trim();
+      return raw == null || raw.isEmpty || int.tryParse(raw) == null;
+    }).toList();
+
+    if (missingTimes.isNotEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ Todos los tiros deben tener un número válido.')),
+      );
+      return;
+    }
+
+    // Guardar tiempos
+    for (final p in allPairings) {
+      final secs = int.parse(_controllers[p.id]!.text.trim());
       await db.setPairingTime(p.id, secs);
     }
 
+    // Marcar eliminados
+    await db.marcarParejasEliminadasPorTiempoCero(widget.roundId);
+
     final compState = ref.read(competitionProvider).asData!.value;
-    if (compState.currentRoundNumber < compState.totalRounds) {
+    final isLastRound = compState.currentRoundNumber >= compState.totalRounds;
+
+    if (!isLastRound) {
       final nextNumber = compState.currentRoundNumber + 1;
       final nextId = await db.createRound(nextNumber);
+
       await PairingService(db).generateNextRoundPairings(
         compState.initialRoundId,
         nextId,
+        compState.shotsPerRound,
       );
 
+      final nextRoundPairings = await db.getPairingsByRound(nextId);
+      if (nextRoundPairings.isEmpty) {
+        if (!mounted) return;
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            title: const Text('Competencia Finalizada'),
+            content: const Text('Ninguna pareja pasó a la siguiente ronda.\n\nSe mostrará el resumen de resultados.'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // cierra el dialog
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const SummaryScreen()),
+                  );
+                },
+                child: const Text('Ver resumen'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      // Actualizar estado
       ref.read(competitionProvider.notifier).state = AsyncValue.data(
         CompetitionState(
           totalRounds: compState.totalRounds,
           currentRoundId: nextId,
           currentRoundNumber: nextNumber,
           initialRoundId: compState.initialRoundId,
+          shotsPerRound: compState.shotsPerRound,
         ),
       );
 
@@ -97,6 +164,7 @@ class _RoundsScreenState extends ConsumerState<RoundsScreen> {
         ),
       );
     } else {
+      // Última ronda, ir directo al resumen
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const SummaryScreen()),
@@ -104,10 +172,11 @@ class _RoundsScreenState extends ConsumerState<RoundsScreen> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<_PairingWithNames>>(
-      future: _pairingsFuture,
+    return FutureBuilder<Map<int, List<_PairingWithNames>>>(
+      future: _groupedPairingsFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Scaffold(
@@ -116,10 +185,8 @@ class _RoundsScreenState extends ConsumerState<RoundsScreen> {
           );
         }
 
-        final list = snapshot.data!;
-        for (var p in list) {
-          _controllers.putIfAbsent(p.pairing.id, () => TextEditingController());
-        }
+        final grouped = snapshot.data!;
+        final allPairings = grouped.values.expand((e) => e.map((x) => x.pairing)).toList();
 
         return Scaffold(
           backgroundColor: AppStyles.background,
@@ -129,67 +196,78 @@ class _RoundsScreenState extends ConsumerState<RoundsScreen> {
             child: Column(
               children: [
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: list.length,
-                    itemBuilder: (_, i) {
-                      final p = list[i];
-                      return Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppStyles.cardRadius),
-                        ),
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.all(AppStyles.padding),
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF7B3F00),
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
-                                  offset: const Offset(0, 2),
-                                  blurRadius: 4,
+                  child: ListView(
+                    children: grouped.entries.map((entry) {
+                      final shotNum = entry.key;
+                      final list = entry.value;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '🎯 Tiro $shotNum',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...list.map((p) {
+                            final isEliminated = p.pairing.isEliminated;
+
+                            return Card(
+                              color: isEliminated ? Colors.red.shade50 : null,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(AppStyles.cardRadius),
+                              ),
+                              margin: const EdgeInsets.symmetric(vertical: 6),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.all(AppStyles.padding),
+                                leading: Icon(
+                                  isEliminated ? Icons.block : Icons.sports,
+                                  color: isEliminated ? Colors.red : null,
                                 ),
-                              ],
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              '${i + 1}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                                title: Text(
+                                  '${p.headName} ↔ ${p.heelName}',
+                                  style: isEliminated
+                                      ? const TextStyle(
+                                          color: Colors.red,
+                                          fontStyle: FontStyle.italic,
+                                        )
+                                      : null,
+                                ),
+                                subtitle: isEliminated
+                                    ? const Text(
+                                        'Eliminado en esta ronda',
+                                        style: TextStyle(color: Colors.red),
+                                      )
+                                    : null,
+                                trailing: SizedBox(
+                                  width: 90,
+                                  child: TextField(
+                                    enabled: !isEliminated,
+                                    controller: _controllers[p.pairing.id],
+                                    keyboardType: TextInputType.number,
+                                    decoration: InputDecoration(
+                                      labelText: 'Segs',
+                                      labelStyle: isEliminated
+                                          ? const TextStyle(color: Colors.grey)
+                                          : null,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                          title: Text(
-                            '${p.headName} ↔ ${p.heelName}',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          trailing: SizedBox(
-                            width: 90,
-                            child: TextField(
-                              controller: _controllers[p.pairing.id],
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'Segs',
-                              ),
-                            ),
-                          ),
-                        ),
+                            );
+                          }),
+                          const SizedBox(height: 16),
+                        ],
                       );
-                    },
+                    }).toList(),
                   ),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
-                  onPressed: () {
-                    final pairings = list.map((e) => e.pairing).toList();
-                    _saveAndNext(pairings);
-                  },
+                  onPressed: () => _saveAndNext(allPairings),
                   icon: const Icon(Icons.navigate_next),
                   label: const Text('Guardar y Siguiente'),
                 ),
